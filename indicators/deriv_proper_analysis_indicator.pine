@@ -1,0 +1,75 @@
+//@version=5
+indicator("Deriv Proper Analysis Buy/Sell v2", overlay=true, max_labels_count=500)
+
+// ===== Inputs =====
+fastEMA = input.int(21, "Fast EMA", minval=1)
+slowEMA = input.int(55, "Slow EMA", minval=2)
+rsiLength = input.int(14, "RSI Length", minval=2)
+rsiBullMin = input.int(55, "RSI Bull Threshold", minval=1, maxval=100)
+rsiBearMax = input.int(45, "RSI Bear Threshold", minval=1, maxval=100)
+adxLength = input.int(14, "ADX Length", minval=2)
+adxMin = input.int(18, "Min ADX (Trend Strength)", minval=1, maxval=100)
+atrLength = input.int(14, "ATR Length", minval=1)
+atrStopMult = input.float(1.5, "Stop ATR Multiplier", minval=0.1, step=0.1)
+riskReward = input.float(2.0, "Risk:Reward Target", minval=0.5, step=0.1)
+cooldownBars = input.int(5, "Signal Cooldown Bars", minval=0)
+showBackground = input.bool(true, "Show Trend Background")
+showSignals = input.bool(true, "Show Buy/Sell Labels")
+
+// ===== Core calculations =====
+emaFast = ta.ema(close, fastEMA)
+emaSlow = ta.ema(close, slowEMA)
+rsi = ta.rsi(close, rsiLength)
+adx = ta.adx(adxLength)
+atr = ta.atr(atrLength)
+
+trendBull = emaFast > emaSlow
+trendBear = emaFast < emaSlow
+
+// Pullback / rejection to fast EMA
+pullbackToFast = low <= emaFast and close >= emaFast
+rejectionFromFast = high >= emaFast and close <= emaFast
+
+// Momentum confirmation
+momentumBull = rsi > rsiBullMin and rsi > rsi[1]
+momentumBear = rsi < rsiBearMax and rsi < rsi[1]
+
+// Trend quality confirmation
+trendStrong = adx >= adxMin
+
+// Raw signal logic
+buySignal = trendBull and pullbackToFast and momentumBull and trendStrong
+sellSignal = trendBear and rejectionFromFast and momentumBear and trendStrong
+
+// Cooldown logic to reduce signal clustering
+var int lastSignalBar = na
+canSignal = na(lastSignalBar) or (bar_index - lastSignalBar > cooldownBars)
+
+buy = buySignal and canSignal
+sell = sellSignal and canSignal
+
+if buy or sell
+    lastSignalBar := bar_index
+
+// ===== Visuals =====
+plot(emaFast, "EMA Fast", color=color.new(color.teal, 0), linewidth=2)
+plot(emaSlow, "EMA Slow", color=color.new(color.orange, 0), linewidth=2)
+
+bgcolor(showBackground ? trendBull ? color.new(color.green, 92) : trendBear ? color.new(color.red, 92) : na : na)
+
+plotshape(showSignals and buy, title="Buy", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), text="BUY", textcolor=color.white, size=size.tiny)
+plotshape(showSignals and sell, title="Sell", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.tiny)
+
+// ===== Risk guide levels (plotted only at signal bars) =====
+longStop = close - atrStopMult * atr
+shortStop = close + atrStopMult * atr
+longTarget = close + (close - longStop) * riskReward
+shortTarget = close - (shortStop - close) * riskReward
+
+plot(buy ? longStop : na, "Suggested Long Stop", color=color.new(color.red, 35), style=plot.style_circles)
+plot(sell ? shortStop : na, "Suggested Short Stop", color=color.new(color.red, 35), style=plot.style_circles)
+plot(buy ? longTarget : na, "Suggested Long Target", color=color.new(color.green, 35), style=plot.style_circles)
+plot(sell ? shortTarget : na, "Suggested Short Target", color=color.new(color.green, 35), style=plot.style_circles)
+
+alertcondition(buy, title="Deriv Buy Alert", message="Deriv Proper Analysis v2: BUY signal")
+alertcondition(sell, title="Deriv Sell Alert", message="Deriv Proper Analysis v2: SELL signal")
